@@ -773,7 +773,6 @@ var MediaElement = function MediaElement(idOrNode, options, sources) {
 		event.message = message;
 		event.urls = urlList;
 		t.mediaElement.dispatchEvent(event);
-		t.mediaElement.originalNode.style.display = 'none';
 		error = true;
 	};
 
@@ -853,7 +852,6 @@ var MediaElement = function MediaElement(idOrNode, options, sources) {
 			event = (0, _general.createEvent)('pause', t.mediaElement);
 			t.mediaElement.dispatchEvent(event);
 		}
-
 		t.mediaElement.originalNode.setAttribute('src', mediaFiles[0].src || '');
 
 		if (renderInfo === null && mediaFiles[0].src) {
@@ -863,6 +861,33 @@ var MediaElement = function MediaElement(idOrNode, options, sources) {
 
 		return mediaFiles[0].src ? t.mediaElement.changeRenderer(renderInfo.rendererName, mediaFiles) : null;
 	},
+	    triggerAction = function triggerAction(methodName, args) {
+		try {
+			var response = t.mediaElement.renderer[methodName](args);
+			if (response && typeof response.then === 'function') {
+				response.catch(function (e) {
+					if (methodName === 'play') {
+						if (t.mediaElement.paused) {
+							setTimeout(function () {
+								var tmpResponse = t.mediaElement.renderer.play();
+								if (tmpResponse !== undefined) {
+									tmpResponse.catch(function () {
+										if (!t.mediaElement.renderer.paused) {
+											t.mediaElement.renderer.pause();
+										}
+									});
+								}
+							}, 150);
+						}
+					} else {
+						return t.mediaElement.generateError(e, mediaFiles);
+					}
+				});
+			}
+		} catch (e) {
+			t.mediaElement.generateError(e, mediaFiles);
+		}
+	},
 	    assignMethods = function assignMethods(methodName) {
 		t.mediaElement[methodName] = function () {
 			for (var _len = arguments.length, args = Array(_len), _key = 0; _key < _len; _key++) {
@@ -870,43 +895,14 @@ var MediaElement = function MediaElement(idOrNode, options, sources) {
 			}
 
 			if (t.mediaElement.renderer !== undefined && t.mediaElement.renderer !== null && typeof t.mediaElement.renderer[methodName] === 'function') {
-				if (methodName === 'play') {
-					if (t.mediaElement.promises.length) {
-						Promise.all(t.mediaElement.promises).then(function () {
-							setTimeout(function () {
-								var response = t.mediaElement.renderer[methodName](args);
-								if (response && typeof response.then === 'function') {
-									response.catch(function (e) {
-										return t.mediaElement.generateError(e, mediaFiles);
-									});
-								}
-							}, 200);
-						}).catch(function (e) {
-							t.mediaElement.generateError(e, mediaFiles);
-						});
-					} else {
-						try {
-							var response = t.mediaElement.renderer[methodName](args);
-							if (response && typeof response.then === 'function') {
-								response.catch(function (e) {
-									return t.mediaElement.generateError(e, mediaFiles);
-								});
-							}
-						} catch (e) {
-							t.mediaElement.generateError(e, mediaFiles);
-						}
-					}
-				} else {
-					try {
-						var _response = t.mediaElement.renderer[methodName](args);
-						if (_response && typeof _response.then === 'function') {
-							_response.catch(function (e) {
-								return t.mediaElement.generateError(e, mediaFiles);
-							});
-						}
-					} catch (e) {
+				if (t.mediaElement.promises.length) {
+					Promise.all(t.mediaElement.promises).then(function () {
+						triggerAction(methodName, args);
+					}).catch(function (e) {
 						t.mediaElement.generateError(e, mediaFiles);
-					}
+					});
+				} else {
+					triggerAction(methodName, args);
 				}
 			}
 			return null;
@@ -1011,7 +1007,7 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 
 var mejs = {};
 
-mejs.version = '4.1.3';
+mejs.version = '4.2.0';
 
 mejs.html5media = {
 	properties: ['volume', 'src', 'currentTime', 'muted', 'duration', 'paused', 'ended', 'buffered', 'error', 'networkState', 'readyState', 'seeking', 'seekable', 'currentSrc', 'preload', 'bufferedBytes', 'bufferedTime', 'initialTime', 'startOffsetTime', 'defaultPlaybackRate', 'playbackRate', 'played', 'autoplay', 'loop', 'controls'],
@@ -1918,7 +1914,7 @@ var NativeFlv = {
 				NativeFlv._createPlayer(settings);
 			});
 		} else if (!NativeFlv.promise) {
-			settings.options.path = typeof settings.options.path === 'string' ? settings.options.path : 'https://cdnjs.cloudflare.com/ajax/libs/flv.js/1.3.0/flv.min.js';
+			settings.options.path = typeof settings.options.path === 'string' ? settings.options.path : 'https://cdnjs.cloudflare.com/ajax/libs/flv.js/1.3.1/flv.min.js';
 
 			NativeFlv.promise = NativeFlv.promise || (0, _dom.loadScript)(settings.options.path);
 			NativeFlv.promise.then(function () {
@@ -1943,7 +1939,7 @@ var FlvNativeRenderer = {
 	options: {
 		prefix: 'native_flv',
 		flv: {
-			path: 'https://cdnjs.cloudflare.com/ajax/libs/flv.js/1.3.0/flv.min.js',
+			path: 'https://cdnjs.cloudflare.com/ajax/libs/flv.js/1.3.1/flv.min.js',
 
 			cors: true,
 			debug: false
@@ -2145,7 +2141,7 @@ var NativeHls = {
 				NativeHls._createPlayer(settings);
 			});
 		} else if (!NativeHls.promise) {
-			settings.options.path = typeof settings.options.path === 'string' ? settings.options.path : 'https://cdnjs.cloudflare.com/ajax/libs/hls.js/0.7.9/hls.min.js';
+			settings.options.path = typeof settings.options.path === 'string' ? settings.options.path : 'https://cdnjs.cloudflare.com/ajax/libs/hls.js/0.7.10/hls.min.js';
 
 			NativeHls.promise = NativeHls.promise || (0, _dom.loadScript)(settings.options.path);
 			NativeHls.promise.then(function () {
@@ -2168,7 +2164,7 @@ var HlsNativeRenderer = {
 	options: {
 		prefix: 'native_hls',
 		hls: {
-			path: 'https://cdnjs.cloudflare.com/ajax/libs/hls.js/0.7.9/hls.min.js',
+			path: 'https://cdnjs.cloudflare.com/ajax/libs/hls.js/0.7.10/hls.min.js',
 
 			autoStartLoad: false,
 			debug: false

@@ -280,7 +280,6 @@ class MediaElement {
 			event.message = message;
 			event.urls = urlList;
 			t.mediaElement.dispatchEvent(event);
-			t.mediaElement.originalNode.style.display = 'none';
 			error = true;
 		};
 
@@ -376,10 +375,8 @@ class MediaElement {
 					event = createEvent('pause', t.mediaElement);
 					t.mediaElement.dispatchEvent(event);
 				}
-
 				t.mediaElement.originalNode.setAttribute('src', (mediaFiles[0].src || ''));
 
-				// did we find a renderer?
 				// At least there must be a media in the `mediaFiles` since the media tag can come up an
 				// empty source for starters
 				if (renderInfo === null && mediaFiles[0].src) {
@@ -390,43 +387,48 @@ class MediaElement {
 				// turn on the renderer (this checks for the existing renderer already)
 				return mediaFiles[0].src ? t.mediaElement.changeRenderer(renderInfo.rendererName, mediaFiles) : null;
 			},
+			triggerAction = (methodName, args) => {
+				try {
+					const response = t.mediaElement.renderer[methodName](args);
+					if (response && typeof response.then === 'function') {
+						response.catch((e) => {
+							// Sometimes, playing media might throw `DOMException: The play() request was interrupted`.
+							// If so, pause and re-execute the action.
+							if (methodName === 'play') {
+								if (t.mediaElement.paused) {
+									setTimeout(() => {
+										const tmpResponse = t.mediaElement.renderer.play();
+										if (tmpResponse !== undefined) {
+											// Final attempt: just pause the media if it's not paused
+											tmpResponse.catch(() => {
+												if (!t.mediaElement.renderer.paused) {
+													t.mediaElement.renderer.pause();
+												}
+											});
+										}
+									}, 150);
+								}
+							} else {
+								return t.mediaElement.generateError(e, mediaFiles);
+							}
+						});
+					}
+				} catch (e) {
+					t.mediaElement.generateError(e, mediaFiles);
+				}
+			},
 			assignMethods = (methodName) => {
-				// run the method on the current renderer
 				t.mediaElement[methodName] = (...args) => {
 					if (t.mediaElement.renderer !== undefined && t.mediaElement.renderer !== null &&
 						typeof t.mediaElement.renderer[methodName] === 'function') {
-						if (methodName === 'play') {
-							if (t.mediaElement.promises.length) {
-								Promise.all(t.mediaElement.promises).then(() => {
-									// Give a delay to ensure all be played properly
-									setTimeout(() => {
-										const response = t.mediaElement.renderer[methodName](args);
-										if (response && typeof response.then === 'function') {
-											response.catch((e) => t.mediaElement.generateError(e, mediaFiles));
-										}
-									}, 200);
-								}).catch((e) => {
-									t.mediaElement.generateError(e, mediaFiles);
-								});
-							} else {
-								try {
-									const response = t.mediaElement.renderer[methodName](args);
-									if (response && typeof response.then === 'function') {
-										response.catch((e) => t.mediaElement.generateError(e, mediaFiles));
-									}
-								} catch (e) {
-									t.mediaElement.generateError(e, mediaFiles);
-								}
-							}
-						} else {
-							try {
-								const response = t.mediaElement.renderer[methodName](args);
-								if (response && typeof response.then === 'function') {
-									response.catch((e) => t.mediaElement.generateError(e, mediaFiles));
-								}
-							} catch (e) {
+						if (t.mediaElement.promises.length) {
+							Promise.all(t.mediaElement.promises).then(() => {
+								triggerAction(methodName, args);
+							}).catch((e) => {
 								t.mediaElement.generateError(e, mediaFiles);
-							}
+							});
+						} else {
+							triggerAction(methodName, args);
 						}
 					}
 					return null;
